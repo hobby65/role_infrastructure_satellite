@@ -1,0 +1,13 @@
+[reposerver-AppStream]
+name=AppStream
+baseurl=http://{{ satellite_server }}/rhel{{ ansible_distribution_major_version }}/AppStream
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+gpgcheck=1
+
+[reposerver-BaseOs]
+name=BaseOs
+baseurl=http://{{ satellite_server }}/rhel{{ ansible_distribution_major_version }}/BaseOS
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+gpgcheck=1

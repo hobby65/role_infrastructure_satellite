@@ -1,0 +1,59 @@
+---
+- name: Gather changed facts for the system (gathering was not done yet)
+  ansible.builtin.setup:
+
+- name: Add satellite in hosts file
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^{{ hostvars[item].primary_interface.ip }} "
+    line: "{{ '%-20s %-40s %-20s' | format(hostvars[item].primary_interface.ip, item, item.split('.')[0]) }}"
+    state: present
+    mode: '0644'
+  with_items:
+    - "{{ satellite_server }}"
+
+- name: Include subscription tasks
+  ansible.builtin.include_tasks:
+    file: redhat_subscription.yml
+  when: satellite_present
+
+- name: Add hosts to satellite
+  delegate_to: localhost
+  when: satellite_present
+  block:
+
+    - name: Create host collection
+      redhat.satellite.host_collection:
+        username: "{{ vault_satellite_admin_user }}"
+        password: "{{ vault_satellite_admin_passwd }}"
+        server_url: "https://{{ satellite_server }}"
+        name: "{{ env }}"
+        organization: "{{ satellite_organization_name }}"
+        validate_certs: false
+        state: present
+
+    - name: Register to collection with hammer
+      become: true
+      ansible.builtin.command:
+        argv:
+          - hammer
+          - host-collection
+          - add-host
+          - --hosts
+          - "{{ inventory_hostname }}"
+          - --name
+          - "{{ env }}"
+          - --organization
+          - "{{ satellite_organization_name }}"
+      register: ho
+      changed_when: false
+      failed_when:
+        - 'ho.rc != 0'
+        - 'ho.rc != 73'
+      delegate_to: "{{ satellite_server }}"
+
+- name: Include local repository tasks
+  ansible.builtin.include_tasks:
+    file: local_repository.yml
+  when: not satellite_present

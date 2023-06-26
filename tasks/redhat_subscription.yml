@@ -1,0 +1,80 @@
+---
+- name: Run as root user
+  become: true
+  block:
+    - name: Remove all local repositories
+      ansible.builtin.file:
+        path: /etc/yum.repos.d/*.repo
+        state: absent
+
+    - name: Clear the repo chache
+      ansible.builtin.command: yum clean all
+      register: _yum_clean
+      changed_when: _yum_clean.rc == 0
+
+    - name: Install katello consumer without gpg check for RHEL9
+      ansible.builtin.package:
+        name: http://{{ satellite_server }}/pub/katello-ca-consumer-latest.noarch.rpm
+        state: present
+        disable_gpg_check: true
+      register: _result
+      until: _result is not failed
+      retries: 3
+      delay: 2
+      when: ansible_distribution_major_version is version('8','>=')
+
+    - name: Register to satellite with SCA enabled
+      community.general.redhat_subscription:
+        state: present
+        org_id: "{{ satellite_organization_label }}"
+        activationkey: "{{ satellite_activation_key }}"
+        # force_register: true
+
+    - name: Delete ipv6 line
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^::1.*{{ ansible_hostname }}'
+        state: absent
+
+    - name: Install Red Hat Insights Client
+      ansible.builtin.package:
+        name: insights-client
+        state: present
+
+    - name: Register client to insights
+      ansible.builtin.command: insights-client --register --retry 2
+      register: registration_result
+      tags: skip_ansible_lint
+      failed_when: false
+
+    - name: Force register client to insights
+      ansible.builtin.command: insights-client --force-reregister
+      register: registration_result_force
+      tags: skip_ansible_lint
+      when: registration_result.rc != 0
+
+    - name: Run update
+      ansible.builtin.package:
+        name: '*'
+        state: latest
+      tags: skip_ansible_lint
+      register: _update
+
+    - name: Rebooting the server because of package updates
+      ansible.builtin.reboot:
+        reboot_timeout: 100
+      register: _reboot
+      ignore_errors: true
+      when: _update.changed
+      tags: skip_ansible_lint
+
+- name: Debug
+  ansible.builtin.debug:
+    var: _reboot
+
+- name: Wait for the server to come back online
+  ansible.builtin.wait_for:
+    delay: 30
+    port: 22
+    host: "{{ inventory_hostname }}"
+  delegate_to: localhost

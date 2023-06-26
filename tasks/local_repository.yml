@@ -1,0 +1,33 @@
+---
+# Configure local yum repositories, this should only be done
+# when there is no satellite server present in development
+
+- name: The folowing block runs under the root user
+  become: true
+  block:
+
+    - name: Place the local repo file
+      ansible.builtin.template:
+        src: local.repo.j2
+        dest: /etc/yum.repos.d/local.repo
+        mode: '0644'
+
+    - name: Place the reposerver into hosts so it resolves
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ '%-20s %-40s' | format(hostvars[satellite_server].primary_interface.ip, satellite_server) }}"
+        state: present
+
+    - name: Clean dnf cache
+      ansible.builtin.command: dnf clean all
+      args:
+        warn: false # set to false for using dnf, not the module
+      register: _dnf_clean
+      changed_when: _dnf_clean.rc != 0
+
+    - name: Refresh new repos
+      ansible.builtin.command: dnf makecache
+      args:
+        warn: false # set to false for using dnf, not the module
+      register: _dnf_makecache
+      changed_when: _dnf_makecache.rc == 0
